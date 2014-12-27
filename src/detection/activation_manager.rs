@@ -1,6 +1,6 @@
 use std::num::FloatMath;
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::Arc;
+use std::sync::RWLock;
 use na;
 use ncollide::utils::data::hash_map::HashMap;
 use ncollide::utils::data::hash::UintTWHash;
@@ -19,7 +19,7 @@ pub struct ActivationManager {
     mix_factor:     Scalar,
     ufind:          Vec<UnionFindSet>,
     can_deactivate: Vec<bool>,
-    to_activate:    Vec<Rc<RefCell<RigidBody>>>,
+    to_activate:    Vec<Arc<RWLock<RigidBody>>>,
 }
 
 impl ActivationManager {
@@ -41,8 +41,8 @@ impl ActivationManager {
 
     /// Notify the `ActivationManager` that is has to activate an object at the next update.
     // FIXME: this is not a very good name
-    pub fn will_activate(&mut self, b: &Rc<RefCell<RigidBody>>) {
-        if b.borrow().can_move() && !b.borrow().is_active() {
+    pub fn will_activate(&mut self, b: &Arc<RWLock<RigidBody>>) {
+        if b.read().can_move() && !b.read().is_active() {
             self.to_activate.push(b.clone());
         }
     }
@@ -65,14 +65,14 @@ impl ActivationManager {
     pub fn update(&mut self,
                   world:  &mut RigidBodyCollisionWorld,
                   joints: &JointManager,
-                  bodies: &HashMap<uint, Rc<RefCell<RigidBody>>, UintTWHash>) {
+                  bodies: &HashMap<uint, Arc<RWLock<RigidBody>>, UintTWHash>) {
         /*
          *
          * Update bodies energy
          *
          */
         for (i, b) in bodies.elements().iter().enumerate() {
-            let mut b = b.value.borrow_mut();
+            let mut b = b.value.write();
 
             assert!(*b.activation_state() != ActivationState::Deleted);
             if b.is_active() {
@@ -88,7 +88,7 @@ impl ActivationManager {
          *
          */
         for b in self.to_activate.iter() {
-            let mut rb = b.borrow_mut();
+            let mut rb = b.write();
 
             match rb.deactivation_threshold() {
                 Some(threshold) => rb.activate(threshold * na::cast(2.0f64)),
@@ -124,9 +124,9 @@ impl ActivationManager {
         }
 
         // Run the union-find.
-        fn make_union(b1: &Rc<RefCell<RigidBody>>, b2: &Rc<RefCell<RigidBody>>, ufs: &mut [UnionFindSet]) {
-            let rb1 = b1.borrow();
-            let rb2 = b2.borrow();
+        fn make_union(b1: &Arc<RWLock<RigidBody>>, b2: &Arc<RWLock<RigidBody>>, ufs: &mut [UnionFindSet]) {
+            let rb1 = b1.read();
+            let rb2 = b2.read();
 
             if rb1.can_move() && rb2.can_move() {
                 union_find::union(rb1.index() as uint, rb2.index() as uint, ufs)
@@ -143,13 +143,13 @@ impl ActivationManager {
             match e.value {
                 Constraint::RBRB(ref b1, ref b2, _) => make_union(b1, b2, self.ufind.as_mut_slice()),
                 Constraint::BallInSocket(ref b)   => {
-                    match (b.borrow().anchor1().body.as_ref(), b.borrow().anchor2().body.as_ref()) {
+                    match (b.read().anchor1().body.as_ref(), b.read().anchor2().body.as_ref()) {
                         (Some(b1), Some(b2)) => make_union(b1, b2, self.ufind.as_mut_slice()),
                         _ => { }
                     }
                 },
                 Constraint::Fixed(ref f)   => {
-                    match (f.borrow().anchor1().body.as_ref(), f.borrow().anchor2().body.as_ref()) {
+                    match (f.read().anchor1().body.as_ref(), f.read().anchor2().body.as_ref()) {
                         (Some(b1), Some(b2)) => make_union(b1, b2, self.ufind.as_mut_slice()),
                         _ => { }
                     }
@@ -163,7 +163,7 @@ impl ActivationManager {
         // Find deactivable islands.
         for i in range(0u, self.ufind.len()) {
             let root = union_find::find(i, self.ufind.as_mut_slice());
-            let b    = bodies.elements()[i].value.borrow();
+            let b    = bodies.elements()[i].value.read();
 
             self.can_deactivate[root] =
                 match b.deactivation_threshold() {
@@ -177,7 +177,7 @@ impl ActivationManager {
         // Activate/deactivate islands.
         for i in range(0u, self.ufind.len()) {
             let root = union_find::find(i, self.ufind.as_mut_slice());
-            let mut b = bodies.elements()[i].value.borrow_mut();
+            let mut b = bodies.elements()[i].value.write();
 
             if self.can_deactivate[root] { // Everybody in this set can be deactivacted.
                 b.deactivate();

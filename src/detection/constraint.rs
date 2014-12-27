@@ -1,7 +1,7 @@
 //! Data structure to describe a constraint between two rigid bodies.
 
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::Arc;
+use std::sync::RWLock;
 use ncollide::geometry::Contact;
 use object::RigidBody;
 use detection::joint::{Fixed, BallInSocket};
@@ -10,11 +10,11 @@ use math::{Scalar, Point, Vect};
 /// A constraint between two rigid bodies.
 pub enum Constraint {
     /// A contact.
-    RBRB(Rc<RefCell<RigidBody>>, Rc<RefCell<RigidBody>>, Contact<Scalar, Point, Vect>),
+    RBRB(Arc<RWLock<RigidBody>>, Arc<RWLock<RigidBody>>, Contact<Scalar, Point, Vect>),
     /// A ball-in-socket joint.
-    BallInSocket(Rc<RefCell<BallInSocket>>),
+    BallInSocket(Arc<RWLock<BallInSocket>>),
     /// A fixed joint.
-    Fixed(Rc<RefCell<Fixed>>),
+    Fixed(Arc<RWLock<Fixed>>),
 }
 
 impl Clone for Constraint {

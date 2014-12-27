@@ -23,7 +23,7 @@ impl CCDBody {
     fn new(body: RigidBodyHandle, threshold: Scalar) -> CCDBody {
         CCDBody {
             sqthreshold: threshold * threshold,
-            last_pos:    body.borrow().position().translation(),
+            last_pos:    body.read().position().translation(),
             body:        body,
             accept_zero: true
         }
@@ -61,7 +61,7 @@ impl TranslationalCCDMotionClamping {
         // XXX: we should no do this in a sequential order because CCD betwen two fast, CCD-enabled
         // objects, will not work properly (it will be biased toward the first object).
         for o in self.objects.elements_mut().iter_mut() {
-            let brb1 = o.value.body.borrow();
+            let brb1 = o.value.body.read();
 
             let movement = brb1.position().translation() - o.value.last_pos;
 
@@ -84,7 +84,7 @@ impl TranslationalCCDMotionClamping {
                 // FIXME: performing a convex-cast here would be much more efficient.
                 cw.interferences_with_aabb(&swept_aabb, |rb2| {
                     if rb2.uid() != o.value.body.uid() {
-                        let brb2 = rb2.borrow();
+                        let brb2 = rb2.read();
 
                         let toi = geometry::time_of_impact_internal::shape_against_shape(
                             &last_transform,
@@ -115,7 +115,7 @@ impl TranslationalCCDMotionClamping {
                 drop(brb1);
 
                 if toi_found {
-                    o.value.body.borrow_mut().append_translation(&(-dir * (na::one::<Scalar>() - min_toi)));
+                    o.value.body.write().append_translation(&(-dir * (na::one::<Scalar>() - min_toi)));
                     o.value.accept_zero = false;
                 }
                 else {
@@ -125,11 +125,11 @@ impl TranslationalCCDMotionClamping {
                 /*
                  * We moved the object: ensure the broad phase takes that in account.
                  */
-                cw.set_next_position(&o.value.body, o.value.body.borrow().position().clone());
+                cw.set_next_position(&o.value.body, o.value.body.read().position().clone());
                 update_collision_world = true;
             }
 
-            o.value.last_pos = o.value.body.borrow().position().translation();
+            o.value.last_pos = o.value.body.read().position().translation();
         }
 
         if update_collision_world {
